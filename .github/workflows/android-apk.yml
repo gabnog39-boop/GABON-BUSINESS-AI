@@ -109,12 +109,82 @@ jobs:
           echo "Configuration AndroidX :"
           cat android/gradle.properties
 
+      - name: Corriger les XML Android
+        shell: bash
+        run: |
+          set -e
+
+          echo "Recherche des fichiers XML Android..."
+
+          python3 <<'PY'
+          from pathlib import Path
+          import re
+
+          root = Path("android/app/src/main/res")
+
+          if not root.exists():
+              print("Aucun dossier res trouvé.")
+              raise SystemExit(0)
+
+          files = list(root.rglob("*.xml"))
+
+          print(f"{len(files)} fichier(s) XML trouvé(s).")
+
+          pattern = re.compile(
+              r'&(?!amp;|lt;|gt;|quot;|apos;|#\d+;|#x[0-9A-Fa-f]+;)'
+          )
+
+          repaired = 0
+
+          for path in files:
+              original = path.read_text(encoding="utf-8")
+              fixed = pattern.sub("&amp;", original)
+
+              if fixed != original:
+                  path.write_text(fixed, encoding="utf-8")
+                  repaired += 1
+                  print(f"XML corrigé : {path}")
+
+          print(f"{repaired} fichier(s) XML corrigé(s).")
+          PY
+
+      - name: Vérifier les XML Android
+        shell: bash
+        run: |
+          set -e
+
+          python3 <<'PY'
+          from pathlib import Path
+          import xml.etree.ElementTree as ET
+
+          root = Path("android/app/src/main/res")
+
+          if not root.exists():
+              print("Aucun dossier res trouvé.")
+              raise SystemExit(0)
+
+          files = list(root.rglob("*.xml"))
+
+          print(f"Validation de {len(files)} fichier(s) XML...")
+
+          for path in files:
+              try:
+                  ET.parse(path)
+                  print(f"OK : {path}")
+              except Exception as e:
+                  print(f"ERREUR XML : {path}")
+                  print(e)
+                  raise SystemExit(1)
+
+          print("Tous les fichiers XML sont valides.")
+
       - name: Vérifier la configuration Android
         shell: bash
         run: |
           set -e
 
           echo "=== settings.gradle ==="
+
           if [ -f android/settings.gradle ]; then
             cat android/settings.gradle
           else
@@ -122,6 +192,7 @@ jobs:
           fi
 
           echo "=== build.gradle ==="
+
           if [ -f android/build.gradle ]; then
             cat android/build.gradle
           else
@@ -129,6 +200,7 @@ jobs:
           fi
 
           echo "=== app/build.gradle ==="
+
           if [ -f android/app/build.gradle ]; then
             cat android/app/build.gradle
           else
@@ -154,7 +226,9 @@ jobs:
         run: |
           set -e
 
-          echo "Construction de GABON BUSINESS AI..."
+          echo "======================================"
+          echo "CONSTRUCTION DE GABON BUSINESS AI"
+          echo "======================================"
 
           gradle -p android :app:assembleDebug --stacktrace
 
@@ -173,8 +247,8 @@ jobs:
           echo "======================================"
           echo "APK GÉNÉRÉ AVEC SUCCÈS"
           echo "======================================"
-          echo "APK : $APK"
 
+          echo "APK : $APK"
           echo "APK=$APK" >> "$GITHUB_ENV"
 
           ls -lh "$APK"
