@@ -14,6 +14,7 @@ jobs:
       contents: read
 
     steps:
+
       - name: Télécharger le projet
         uses: actions/checkout@v4
 
@@ -59,7 +60,7 @@ jobs:
 
           echo "Recherche du projet Android..."
 
-          SETTINGS_FILE="$(find /tmp/gabon-business-project -type f -name 'settings.gradle' -o -name 'settings.gradle.kts' | head -n 1)"
+          SETTINGS_FILE="$(find /tmp/gabon-business-project -type f \( -name 'settings.gradle' -o -name 'settings.gradle.kts' \) | head -n 1)"
 
           if [ -z "$SETTINGS_FILE" ]; then
             echo "::error::settings.gradle ou settings.gradle.kts introuvable dans le ZIP."
@@ -86,10 +87,67 @@ jobs:
 
           echo "Projet Android correctement extrait."
 
+      - name: Activer AndroidX
+        shell: bash
+        run: |
+          set -e
+
+          touch android/gradle.properties
+
+          if grep -q "^android.useAndroidX=" android/gradle.properties; then
+            sed -i 's/^android.useAndroidX=.*/android.useAndroidX=true/' android/gradle.properties
+          else
+            echo "android.useAndroidX=true" >> android/gradle.properties
+          fi
+
+          if grep -q "^android.enableJetifier=" android/gradle.properties; then
+            sed -i 's/^android.enableJetifier=.*/android.enableJetifier=true/' android/gradle.properties
+          else
+            echo "android.enableJetifier=true" >> android/gradle.properties
+          fi
+
+          echo "Configuration AndroidX :"
+          cat android/gradle.properties
+
+      - name: Vérifier la configuration Android
+        shell: bash
+        run: |
+          set -e
+
+          echo "=== settings.gradle ==="
+          if [ -f android/settings.gradle ]; then
+            cat android/settings.gradle
+          else
+            cat android/settings.gradle.kts
+          fi
+
+          echo "=== build.gradle ==="
+          if [ -f android/build.gradle ]; then
+            cat android/build.gradle
+          else
+            cat android/build.gradle.kts
+          fi
+
+          echo "=== app/build.gradle ==="
+          if [ -f android/app/build.gradle ]; then
+            cat android/app/build.gradle
+          else
+            cat android/app/build.gradle.kts
+          fi
+
       - name: Préparer Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.9'
+
+      - name: Nettoyer le projet
+        shell: bash
+        run: |
+          set -e
+
+          echo "Nettoyage du projet Android..."
+
+          gradle -p android clean --stacktrace
 
       - name: Construire l'APK
         shell: bash
@@ -112,7 +170,11 @@ jobs:
             exit 1
           fi
 
-          echo "APK généré : $APK"
+          echo "======================================"
+          echo "APK GÉNÉRÉ AVEC SUCCÈS"
+          echo "======================================"
+          echo "APK : $APK"
+
           echo "APK=$APK" >> "$GITHUB_ENV"
 
           ls -lh "$APK"
