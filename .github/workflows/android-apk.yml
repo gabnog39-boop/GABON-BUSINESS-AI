@@ -18,11 +18,10 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Installer Java 17
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: '17'
-          cache: gradle
 
       - name: Installer Android SDK
         uses: android-actions/setup-android@v4
@@ -32,19 +31,60 @@ jobs:
           log-accepted-android-sdk-licenses: true
           packages: 'platform-tools platforms;android-35 build-tools;35.0.0'
 
-      - name: Accepter toutes les licences Android
+      - name: Accepter les licences Android
         shell: bash
         run: |
           yes | sdkmanager --licenses || true
 
-      - name: Vérifier le projet Android
+      - name: Extraire le projet Android
         shell: bash
         run: |
-          test -f android/settings.gradle
-          test -f android/build.gradle
-          test -f android/app/build.gradle
+          set -e
+
+          echo "Recherche du fichier ZIP du projet..."
+
+          ZIP_FILE="$(find . -maxdepth 2 -type f -iname '*.zip' | head -n 1)"
+
+          if [ -z "$ZIP_FILE" ]; then
+            echo "::error::Aucun fichier ZIP du projet n'a été trouvé dans le dépôt."
+            exit 1
+          fi
+
+          echo "ZIP trouvé : $ZIP_FILE"
+
+          rm -rf /tmp/gabon-business-project
+          mkdir -p /tmp/gabon-business-project
+
+          unzip -q "$ZIP_FILE" -d /tmp/gabon-business-project
+
+          echo "Recherche du projet Android..."
+
+          SETTINGS_FILE="$(find /tmp/gabon-business-project -type f -name 'settings.gradle' -o -name 'settings.gradle.kts' | head -n 1)"
+
+          if [ -z "$SETTINGS_FILE" ]; then
+            echo "::error::settings.gradle ou settings.gradle.kts introuvable dans le ZIP."
+            echo "Contenu extrait :"
+            find /tmp/gabon-business-project -maxdepth 4 -type f | head -n 100
+            exit 1
+          fi
+
+          echo "Projet Android trouvé : $SETTINGS_FILE"
+
+          ANDROID_DIR="$(dirname "$SETTINGS_FILE")"
+
+          echo "Dossier Android : $ANDROID_DIR"
+
+          rm -rf android
+          cp -R "$ANDROID_DIR" android
+
+          echo "Vérification des fichiers Android..."
+
+          test -f android/settings.gradle || test -f android/settings.gradle.kts
+          test -f android/build.gradle || test -f android/build.gradle.kts
+          test -f android/app/build.gradle || test -f android/app/build.gradle.kts
           test -f android/app/src/main/AndroidManifest.xml
-          echo "Projet Android détecté correctement."
+
+          echo "Projet Android correctement extrait."
 
       - name: Préparer Gradle
         uses: gradle/actions/setup-gradle@v4
@@ -54,20 +94,17 @@ jobs:
       - name: Construire l'APK
         shell: bash
         run: |
-          if [ -f android/gradlew ]; then
-            cd android
-            chmod +x gradlew
-            ./gradlew :app:assembleDebug --stacktrace
-          elif [ -f gradlew ]; then
-            chmod +x gradlew
-            ./gradlew :android:app:assembleDebug --stacktrace
-          else
-            gradle -p android :app:assembleDebug --stacktrace
-          fi
+          set -e
+
+          echo "Construction de GABON BUSINESS AI..."
+
+          gradle -p android :app:assembleDebug --stacktrace
 
       - name: Rechercher l'APK
         shell: bash
         run: |
+          set -e
+
           APK="$(find android -type f -path '*/build/outputs/apk/*.apk' | head -n 1)"
 
           if [ -z "$APK" ]; then
@@ -75,8 +112,9 @@ jobs:
             exit 1
           fi
 
-          echo "APK trouvé : $APK"
+          echo "APK généré : $APK"
           echo "APK=$APK" >> "$GITHUB_ENV"
+
           ls -lh "$APK"
 
       - name: Publier l'APK
